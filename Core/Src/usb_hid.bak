@@ -1,0 +1,159 @@
+/* usb_hid.c
+ * USB HID Mouse device implementation.
+ *
+ * Uses the STM32 USB FS peripheral (PA11/PA12).
+ * Compatible with STM32CubeIDE generated USB HID middleware.
+ *
+ * If using CubeMX: enable USB_DEVICE, Class = HID, configure the
+ * report descriptor below. Then call USBD_HID_SendReport() directly.
+ *
+ * If building without CubeMX: this file provides a minimal wrapper
+ * that you connect to your USB stack of choice (libopencm3, tinyusb, etc.)
+ *
+ * HID Report Descriptor: Boot-compatible 4-byte mouse
+ *   Byte 0: Buttons (bit0=L, bit1=R, bit2=M)
+ *   Byte 1: X relative (-127..+127)
+ *   Byte 2: Y relative (-127..+127)
+ *   Byte 3: Wheel    (-127..+127)
+ */
+
+#include "usb_hid.h"
+
+/* ---- Standard 4-byte boot mouse descriptor -------------------- */
+const uint8_t HID_MouseReportDescriptor[] = {
+    0x05, 0x01,        /* Usage Page (Generic Desktop)          */
+    0x09, 0x02,        /* Usage (Mouse)                         */
+    0xA1, 0x01,        /* Collection (Application)              */
+    0x09, 0x01,        /*   Usage (Pointer)                     */
+    0xA1, 0x00,        /*   Collection (Physical)               */
+    /* Buttons */
+    0x05, 0x09,        /*     Usage Page (Button)               */
+    0x19, 0x01,        /*     Usage Minimum (Button 1)          */
+    0x29, 0x03,        /*     Usage Maximum (Button 3)          */
+    0x15, 0x00,        /*     Logical Minimum (0)               */
+    0x25, 0x01,        /*     Logical Maximum (1)               */
+    0x95, 0x03,        /*     Report Count (3)                  */
+    0x75, 0x01,        /*     Report Size (1)                   */
+    0x81, 0x02,        /*     Input (Data, Variable, Absolute)  */
+    0x95, 0x01,        /*     Report Count (1)                  */
+    0x75, 0x05,        /*     Report Size (5) - padding         */
+    0x81, 0x03,        /*     Input (Constant)                  */
+    /* X, Y relative */
+    0x05, 0x01,        /*     Usage Page (Generic Desktop)      */
+    0x09, 0x30,        /*     Usage (X)                         */
+    0x09, 0x31,        /*     Usage (Y)                         */
+    0x09, 0x38,        /*     Usage (Wheel)                     */
+    0x15, 0x81,        /*     Logical Minimum (-127)            */
+    0x25, 0x7F,        /*     Logical Maximum (127)             */
+    0x75, 0x08,        /*     Report Size (8)                   */
+    0x95, 0x03,        /*     Report Count (3)                  */
+    0x81, 0x06,        /*     Input (Data, Variable, Relative)  */
+    0xC0,              /*   End Collection                      */
+    0xC0               /* End Collection                        */
+};
+
+const uint16_t HID_MouseReportDescriptorSize =
+    sizeof(HID_MouseReportDescriptor);
+
+/* ================================================================
+ * CubeMX / STM32 USB Middleware path
+ * ================================================================
+ * If you generated this project with CubeMX and have
+ * Middlewares/ST/STM32_USB_Device_Library in your tree:
+ *
+ *   1. In usbd_hid.h, set HID_MOUSE_REPORT_DESC_SIZE to
+ *      sizeof(HID_MouseReportDescriptor) (37 bytes)
+ *   2. Replace the descriptor in usbd_hid.c with the one above.
+ *   3. Use the HID_SendReport wrapper below which calls
+ *      USBD_HID_SendReport().
+ *
+ * Uncomment the block below and include usbd_hid.h:
+ * ================================================================ */
+
+
+#include "usbd_hid.h"
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
+static uint8_t s_report[4] = {0};
+
+HAL_StatusTypeDef HID_SendReport(uint8_t buttons,
+                                  int8_t x, int8_t y, int8_t wheel)
+{
+    s_report[0] = buttons;
+    s_report[1] = (uint8_t)x;
+    s_report[2] = (uint8_t)y;
+    s_report[3] = (uint8_t)wheel;
+
+    uint8_t result = USBD_HID_SendReport(&hUsbDeviceFS, s_report, 4);
+    return (result == USBD_OK) ? HAL_OK : HAL_ERROR;
+}
+
+uint8_t HID_IsReady(void)
+{
+    USBD_HID_HandleTypeDef *hhid =
+        (USBD_HID_HandleTypeDef *)hUsbDeviceFS.pClassData;
+    return (hhid != NULL && hhid->state == HID_IDLE) ? 1 : 0;
+}
+
+
+/* ================================================================
+ * TinyUSB path (alternative, highly recommended)
+ * ================================================================
+ * TinyUSB is cleaner for custom HID on STM32.
+ * Board config: boards/stm32f103_bluepill
+ *
+ * In tusb_config.h:
+ *   #define CFG_TUD_HID  1
+ *
+ * In your HID callbacks:
+ *   uint16_t tud_hid_get_report_cb(...) { ... }
+ *   void     tud_hid_set_report_cb(...) { }
+ *
+ * Then HID_SendReport becomes:
+ * ================================================================ */
+
+/*
+#include "tusb.h"
+
+static uint8_t s_report[4] = {0};
+
+HAL_StatusTypeDef HID_SendReport(uint8_t buttons,
+                                  int8_t x, int8_t y, int8_t wheel)
+{
+    if (!tud_hid_ready()) return HAL_BUSY;
+
+    s_report[0] = buttons;
+    s_report[1] = (uint8_t)x;
+    s_report[2] = (uint8_t)y;
+    s_report[3] = (uint8_t)wheel;
+
+    return tud_hid_report(0, s_report, 4) ? HAL_OK : HAL_ERROR;
+}
+
+uint8_t HID_IsReady(void)
+{
+    return tud_hid_ready() ? 1 : 0;
+}
+*/
+
+/* ================================================================
+ * STUB (compile guard - replace with one of the above)
+ * ================================================================ */
+// #if !defined(USE_CUBEMX_USB) && !defined(USE_TINYUSB)
+
+// static uint8_t s_usb_ready = 0;
+
+// HAL_StatusTypeDef HID_SendReport(uint8_t buttons,
+//                                   int8_t x, int8_t y, int8_t wheel)
+// {
+//     (void)buttons; (void)x; (void)y; (void)wheel;
+//     /* Replace with your USB stack call */
+//     return HAL_OK;
+// }
+
+// uint8_t HID_IsReady(void)
+// {
+//     return s_usb_ready;
+// }
+
+// #endif /* stub */
