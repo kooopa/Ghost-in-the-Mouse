@@ -5,6 +5,9 @@ STM32F103-based HID mouse emulator that records and replays authentic human move
 A simple DIY tool for keeping a PC active by replaying recorded mouse movements.
 
 Instead of relying on random mathematical patterns to move the cursor, this device records your actual mouse input and saves it to an external SPI Flash chip. When in playback mode, it mimics your real-life movement style, making it look like someone is actually using the computer.
+
+
+
 How it works
 
 The device uses an STM32F103 and acts as a composite HID+CDC device.
